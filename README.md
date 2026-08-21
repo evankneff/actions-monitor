@@ -1,31 +1,27 @@
 # actions-monitor
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6.svg)](#)
+[![Built with Rust](https://img.shields.io/badge/built%20with-Rust-000000.svg?logo=rust)](https://www.rust-lang.org/)
+
 A small Windows desktop utility that watches your GitHub accounts for running
 Actions workflows and shows a compact, always-on-top popup while anything is in
 flight. When nothing is running it is completely invisible — no window, no
 taskbar entry, just a background process using almost nothing.
+
+<p align="center">
+  <img src="docs/demo.gif" alt="Cards appearing in the bottom-left corner, showing live job and step progress for three workflow runs" width="424">
+</p>
 
 It is built for having more than one GitHub identity: a personal account, a work
 one, an org you contribute to. Each gets its own token and is polled completely
 independently, but they all share one stack of cards. There is no limit on how
 many you configure.
 
-```
-┌──────────────────────────────────────────┐
-│▎me/actions-monitor                     ✕ │
-│ CI  #101                                 │
-│ main · a1b2c3d · fix: do not steal focus │
-│ ✅ Succeeded                        21s  │
-│ ████████████████████████████████████████ │
-└──────────────────────────────────────────┘
-┌──────────────────────────────────────────┐
-│▎work-org/infra                         ✕ │
-│ Deploy to staging  #102                  │
-│ release/2026.8 · 9f8e7d6 · chore: bump…  │
-│ deploy › Smoke test (step 4/4)      23s  │
-│ ██████████████████████████░░░░░░░░░░░░░░ │
-└──────────────────────────────────────────┘
-```
+**It never takes focus.** The popup cannot pull the foreground away from what
+you are doing, has no taskbar button and no Alt-Tab entry, and disappears on its
+own once the last run finishes. Idle polling uses conditional requests, so
+watching a few dozen repos costs essentially no rate limit.
 
 ## What a card shows
 
