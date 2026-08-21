@@ -9,8 +9,8 @@ use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
 use windows::Win32::System::Console::{
-    ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole, GetStdHandle, STD_ERROR_HANDLE,
-    STD_OUTPUT_HANDLE, SetStdHandle,
+    ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole, FreeConsole, GetStdHandle,
+    STD_ERROR_HANDLE, STD_OUTPUT_HANDLE, SetStdHandle,
 };
 use windows::core::w;
 
@@ -38,6 +38,22 @@ pub fn attach(allocate: bool) -> bool {
         }
     }
     false
+}
+
+/// Let go of whatever console we are attached to.
+///
+/// This matters more than it looks. Windows terminates **every process attached
+/// to a console** when that console window is closed (CTRL_CLOSE_EVENT), so a
+/// background app that attached to the terminal it was launched from dies the
+/// moment that terminal is closed - which is exactly what happened, and is fatal
+/// for something meant to run for weeks.
+///
+/// So the long-running path prints whatever it needs to and then detaches before
+/// entering the event loop. Calling this with no console attached is harmless.
+pub fn detach() {
+    unsafe {
+        let _ = FreeConsole();
+    }
 }
 
 fn has_usable_stdout() -> bool {

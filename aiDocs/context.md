@@ -81,6 +81,8 @@ Keep documents as living artifacts. Stale docs are worse than no docs.
   style from its own flags and silently drops them.
 - **Never appear in the taskbar or Alt-Tab.** `WS_EX_TOOLWINDOW`, with
   `WS_EX_APPWINDOW` cleared.
+- **Never stay attached to a console** on the long-running path. Closing that
+  terminal kills every attached process. Print, then `FreeConsole()`.
 - **Never `panic = "abort"`.** A panicking poller task must not take down an app
   that runs for weeks.
 - **No `unwrap()` / `expect()` on fallible paths in the steady-state loop.**

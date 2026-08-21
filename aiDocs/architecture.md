@@ -99,6 +99,17 @@ next scheduled tick.
 Only `MouseButtonState::Up` is handled; `Down` and `Up` both arrive and acting on
 both would toggle twice per click.
 
+### Console attachment ends the process when the terminal closes
+
+Windows terminates **every process attached to a console** when that console
+window is closed. A GUI-subsystem app that calls
+`AttachConsole(ATTACH_PARENT_PROCESS)` to print a message has therefore tied its
+own lifetime to the terminal it was launched from.
+
+So the long-running path attaches only long enough to print first-run guidance,
+then calls `FreeConsole()` before entering the event loop. `--console` is the
+deliberate exception, since that mode exists to watch the log live.
+
 ## Data Models
 
 ### `Snapshot` — backend to UI, over `tokio::sync::watch`

@@ -252,6 +252,15 @@ fn run(args: &Args, has_console: bool) -> Result<()> {
     let (config_tx, config_rx) = watch::channel(Arc::new(config));
     let reloader = (!args.demo).then(|| Arc::new(config::Reloader::new(config_path, config_tx)));
 
+    // Everything that needed to print has printed. Let go of the launching
+    // terminal before the event loop starts: Windows kills every process
+    // attached to a console when that console window closes, so staying
+    // attached would mean closing the terminal silently kills the monitor.
+    // `--console` is the deliberate exception - that mode exists to watch logs.
+    if !args.console {
+        console::detach();
+    }
+
     let demo = args.demo;
     let backend_reloader = reloader.clone();
     let native_options = eframe::NativeOptions {

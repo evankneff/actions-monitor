@@ -2,6 +2,14 @@ This is meant to be a CONCISE list of changes to track as we develop this projec
 
 ---
 
+## 2026-08-21 — v0.1.1
+
+- Fix: the app was killed whenever the terminal it was launched from was closed.
+  It called `AttachConsole(ATTACH_PARENT_PROCESS)` on the normal launch path, and
+  Windows terminates every process attached to a console when that window closes.
+  It now detaches with `FreeConsole()` before entering the event loop, except
+  under `--console`. Verified by launching from a console and closing it.
+
 ## 2026-08-21 — v0.1.0
 
 Initial build. See `ai/roadmaps/2026-08-21-high-level-project-plan.md`.
