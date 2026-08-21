@@ -1,0 +1,42 @@
+[package]
+name = "actions-monitor"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "A Windows desktop popup that shows live progress for running GitHub Actions workflows across multiple accounts"
+readme = "README.md"
+keywords = ["github", "actions", "ci", "desktop", "windows"]
+categories = ["command-line-utilities", "gui"]
+
+[profile.release]
+# A background utility that mostly sleeps, so trade compile time for size.
+# Deliberately NOT `panic = "abort"`: unwinding lets a panicking poller task die
+# on its own without taking down an app that is meant to sit in the tray for
+# weeks at a time.
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = { version = "0.4.45", features = ["serde"] }
+eframe = { version = "0.36.1", default-features = false, features = ["default_fonts", "glow", "links"] }
+egui = "0.36.1"
+notify = "8.2.0"
+open = "5.4.1"
+raw-window-handle = "0.6"
+reqwest = { version = "0.13.4", default-features = false, features = ["charset", "gzip", "http2", "json", "rustls", "system-proxy"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
+toml = "1.1.4"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "registry"] }
+tray-icon = "0.24.2"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_System_Console", "Win32_Storage_FileSystem", "Win32_System_LibraryLoader", "Win32_UI_HiDpi", "Win32_Security"] }
+winreg = "0.56.0"

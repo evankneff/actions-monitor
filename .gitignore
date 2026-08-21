@@ -1,0 +1,17 @@
+# Rust build artifacts
+/target/
+
+# Local configuration and secrets.
+# The real config lives in %APPDATA%\actions-monitor\, but keep any stray copy
+# out of the repo: it holds personal access tokens in plain text.
+config.toml
+*.local.toml
+/history.json
+/logs/
+
+# Editor and OS noise
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

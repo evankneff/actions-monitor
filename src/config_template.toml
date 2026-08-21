@@ -1,0 +1,98 @@
+# actions-monitor configuration
+#
+# This file lives at %APPDATA%\actions-monitor\config.toml and is re-read
+# automatically whenever you save it -- no restart needed.
+#
+# ---------------------------------------------------------------------------
+# 1. Create a personal access token for each GitHub account
+# ---------------------------------------------------------------------------
+#
+# Fine-grained token (recommended)
+#   https://github.com/settings/personal-access-tokens/new
+#   Resource owner : your own account, or the org that owns the repos
+#   Repository access: "Only select repositories" (pick the ones you want
+#                     watched), or "All repositories" if you use auto_discover
+#   Repository permissions:
+#       Actions   -> Read-only     (required: lists workflow runs and jobs)
+#       Metadata  -> Read-only     (required: granted automatically)
+#   Nothing else is needed. The app never writes anything to GitHub.
+#
+# Classic token (simpler, coarser)
+#   https://github.com/settings/tokens/new
+#   Scope: "repo" for private repositories, or "public_repo" if every repo you
+#   want to watch is public. If your work org enforces SSO, click "Configure
+#   SSO" on the token afterwards and authorise the org.
+#
+# Keeping tokens out of this file: set token_env instead of token and store the
+# value in a user environment variable, e.g. from PowerShell:
+#     setx GH_TOKEN_WORK "github_pat_..."
+# (open a new terminal, or sign out and in, before the app can see it)
+#
+# ---------------------------------------------------------------------------
+# 2. Global settings (all optional; the defaults are shown)
+# ---------------------------------------------------------------------------
+
+# How often each account is polled while nothing is running. These polls use
+# conditional requests (If-None-Match), so unchanged responses cost no rate
+# limit at all.
+poll_idle_seconds = 60
+
+# How often an individual run is refreshed while it is queued or in progress.
+poll_active_seconds = 5
+
+# How long a finished card stays on screen showing its result before the
+# window disappears.
+linger_seconds = 8
+
+# Show an icon in the notification area. Its colour is the current status --
+# grey idle, blue running, then green/red/amber for the last result -- and:
+#   left-click  shows which repos are being watched, and when each was
+#               last checked
+#   right-click opens a menu: show watched repos, reload this file, open this
+#               file, open the logs folder, toggle "start with Windows", quit
+# Set to false to go back to a completely invisible background process.
+#
+# Windows 11 hides newly-registered tray icons behind the "^" arrow. To pin it
+# to the taskbar, click "^" and drag the icon out, or use
+# Settings > Personalisation > Taskbar > Other system tray icons.
+show_tray_icon = true
+
+# ---------------------------------------------------------------------------
+# 3. Accounts -- copy the block below once per GitHub account
+# ---------------------------------------------------------------------------
+#
+# Every account needs exactly one of `token` or `token_env`, and either
+# `auto_discover = true` or a non-empty `repos` list.
+#
+# [[accounts]]
+# name = "personal"                 # any label you like; shown in the logs
+# token = "github_pat_..."          # a literal token, OR use token_env below
+# auto_discover = true              # watch everything you have pushed to lately
+# repos = []                        # ignored when auto_discover is true
+# discover_days = 30                # how far back "pushed lately" reaches
+# discover_max_repos = 25           # cap on auto-discovered repos
+#
+# [[accounts]]
+# name = "work"
+# token_env = "GH_TOKEN_WORK"       # read the token from this env var
+# auto_discover = false
+# repos = ["work-org/app", "work-org/infra"]
+#
+# Ignoring repositories
+# ---------------------
+# `exclude` removes repos from an account, whether they were auto-discovered or
+# listed explicitly. It is applied before discover_max_repos, so excluding a
+# noisy org frees up slots rather than wasting them.
+#
+#   exclude = [
+#     "some-org",           # every repo owned by some-org
+#     "me/scratch",         # exactly that repo
+#     "me/experiment-*",    # anything whose name starts with experiment-
+#     "*/dotfiles",         # a repo of that name under any owner
+#   ]
+#
+# A bare `owner` means that whole owner; `*` matches any run of characters and
+# `?` matches one, in either half. Matching is case-insensitive.
+#
+# Run `actions-monitor --check` after editing to see exactly which repos each
+# account ends up watching, and what every exclude pattern removed.
