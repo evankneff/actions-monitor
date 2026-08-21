@@ -8,3 +8,8 @@
 
 # Generated / vendored
 Cargo.lock linguist-generated=true
+
+# Binary assets: never touch line endings.
+*.gif binary
+*.png binary
+*.ico binary
