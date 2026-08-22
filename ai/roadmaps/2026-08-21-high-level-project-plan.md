@@ -108,9 +108,9 @@ Reference: [2026-08-21-macos-port.md](2026-08-21-macos-port.md),
       `MACOS_RUNBOOK.md`
 - [ ] Graceful-exit path (`Popup::restore`, no `NSAutoreleasePool` double-drain) — needs
       the tray's Quit item, i.e. a mouse; not reachable headlessly
-- [ ] macOS-native data directory (`~/Library/Application Support/actions-monitor`
-      instead of `%APPDATA%`) — found blocking even `--demo` during this work, parked as
-      a separate concern from window behaviour; see the plan doc's "Parked" section
+- [x] macOS-native data directory (`~/Library/Application Support/actions-monitor`
+      instead of `%APPDATA%`) — found blocking even `--demo`; fixed 2026-08-21,
+      commit `9191ed2`
 - [ ] `autostart.rs` macOS arm (`LaunchAgent` plist) — parked, currently returns a clear
       "not implemented" error instead of pretending
 

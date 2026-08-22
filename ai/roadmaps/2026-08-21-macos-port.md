@@ -109,13 +109,20 @@ and it survived.
   which needs the tray's Quit menu item; a `kill` from this session bypasses it entirely
   (no signal handler is registered, so the process just dies, Rust drops and all).
 
+## Follow-up (closed 2026-08-21, commit `9191ed2`)
+
+`paths.rs` resolved everything from `%APPDATA%` unconditionally, which meant the app
+compiled and passed its tests but could not actually run on macOS - not just a
+window-focus gap, but the difference between "ported" and "usable." Fixed natively
+(`$HOME/Library/Application Support/actions-monitor` under `cfg(target_os = "macos")`,
+`%APPDATA%` untouched under `cfg(windows)`), deliberately without adding the `dirs`
+crate - `aiDocs/architecture.md` had already rejected it for the Windows case on the same
+basis. Verified end to end: `env -u APPDATA ./target/debug/actions-monitor --check` now
+locates the config directory, and a config-less run writes the first-run template and
+exits 0, same as Windows.
+
 ## Parked
 
-- **macOS data directory.** `paths.rs` resolves everything from `%APPDATA%`
-  unconditionally, including in `--demo` mode, which blocked even a smoke-test launch
-  until `APPDATA` was set by hand for this session. Not in scope for a window-focus port;
-  a real fix means `~/Library/Application Support/actions-monitor` (or the `dirs`
-  crate, which SpideySense already uses) and is its own small piece of work.
 - **`autostart.rs` macOS arm.** Needs a `LaunchAgent` plist under
   `~/Library/LaunchAgents` and `launchctl` calls, not a `cfg` swap. Currently a clear
   "not implemented" error.

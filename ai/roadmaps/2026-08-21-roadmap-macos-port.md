@@ -34,8 +34,18 @@ Plan: [2026-08-21-macos-port.md](2026-08-21-macos-port.md)
 - [ ] Graceful-exit path (`Popup::restore`, no autorelease-pool message) — needs the
       tray's Quit item, i.e. a mouse. **Not reachable headlessly.**
 
+## Milestone 4 — Make it actually runnable, not just compilable
+
+- [x] `paths.rs`: native `$HOME/Library/Application Support/actions-monitor` on macOS,
+      `%APPDATA%` untouched on Windows, no new dependency (`dirs` was already rejected
+      in `aiDocs/architecture.md`)
+- [x] Doc comments in `paths.rs`/`config.rs`/`logging.rs`/`config_template.toml`/
+      `main.rs --help` updated to describe both platforms
+- [x] `cargo test` 91/0, `cargo clippy --all-targets` clean (both unchanged)
+- [x] `env -u APPDATA ./target/debug/actions-monitor --check` locates
+      `~/Library/Application Support/actions-monitor/config.toml` instead of erroring;
+      a full run with no config wrote a first-run template and exited 0
+
 ## Parked, not blocking
 
-- [ ] macOS-native data directory (`paths.rs` hardcodes `%APPDATA%`, blocks even
-      `--demo` without a manual env var override)
 - [ ] `autostart.rs` macOS `LaunchAgent` implementation

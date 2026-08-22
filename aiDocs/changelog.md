@@ -2,6 +2,18 @@ This is meant to be a CONCISE list of changes to track as we develop this projec
 
 ---
 
+## 2026-08-21 — macOS port: fix the data directory (follow-up)
+
+Compiled and passed tests on macOS but could not run: `paths.rs` resolved `%APPDATA%`
+unconditionally, so even `--demo` errored. Fixed natively (`$HOME/Library/Application
+Support/actions-monitor`, `cfg(target_os = "macos")`), Windows path untouched. No new
+dependency - `dirs` was already rejected in `aiDocs/architecture.md` and the macOS rule
+didn't change that calculus. Doc comments in `paths.rs`/`config.rs`/`logging.rs`/
+`config_template.toml`/`main.rs --help` updated to match. Verified: `cargo test` 91/0,
+`cargo clippy --all-targets` clean, `env -u APPDATA ./target/debug/actions-monitor
+--check` now locates the config directory instead of erroring, and a config-less run
+writes the first-run template and exits 0. `autostart.rs` still untouched/parked.
+
 ## 2026-08-21 — macOS port (compile + non-activating popup)
 
 See `ai/roadmaps/2026-08-21-macos-port.md`. Two commits:
