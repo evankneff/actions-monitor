@@ -68,7 +68,8 @@ comment.
 
 | Symptom | Look at |
 |---|---|
-| binary won't start, `APPDATA environment variable is not set` | expected — see the parked item above; set `APPDATA` |
+| binary won't start, `APPDATA environment variable is not set` | **stale symptom — fixed in `9191ed2`.** If you genuinely see this, you are running a binary built before that commit; rebuild. |
+| `No such file or directory` for `~/Library/Application Support/actions-monitor/config.toml` | expected on a truly first run — the binary writes a starter config there and exits; run it again |
 | card never appears | log for `could not resolve the native window handle` |
 | card appears but steals focus on click | log's `class=` — if it doesn't say `ActionsMonitorNonactivatingPanel`, the swap didn't happen |
 | process aborts on exit | `ui/mac.rs`'s KVO doc comments (`suspend_winit_kvo`/`resume_winit_kvo`) |
