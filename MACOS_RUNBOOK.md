@@ -10,12 +10,10 @@ cd ~/dev/actions-monitor
 PATH=/opt/homebrew/opt/rustup/bin:$PATH cargo build
 ```
 
-`paths.rs` currently resolves everything from `%APPDATA%` (a parked item — see the plan
-doc), so set `APPDATA` to a scratch directory to run this on macOS at all:
-
-```sh
-mkdir -p /tmp/actions-monitor-scratch
-```
+No `APPDATA` workaround is needed. As of `9191ed2`, `paths.rs` resolves the data
+directory natively on macOS to `~/Library/Application Support/actions-monitor`, and the
+binary writes a starter `config.toml` there on first run. `--demo` replays a scripted
+run and never touches the network, so no GitHub token is required for this check.
 
 ```sh
 open TextEdit  # or any app — this is what focus-stealing would interrupt
@@ -24,7 +22,7 @@ open TextEdit  # or any app — this is what focus-stealing would interrupt
 1. Click into a TextEdit document and start typing.
 2. Without clicking away, run (from a terminal, backgrounded or in another Space):
    ```sh
-   APPDATA=/tmp/actions-monitor-scratch RUST_LOG=debug ./target/debug/actions-monitor --demo --console
+   RUST_LOG=debug ./target/debug/actions-monitor --demo --console
    ```
 3. Within a few seconds a small card appears in the bottom-left corner (the demo script
    replays a scripted run).
