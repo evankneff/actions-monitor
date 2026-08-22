@@ -86,14 +86,40 @@ Candidates, roughly in order of how likely they are to matter:
   auto-close.
 - Per-account colour accent, if many accounts turns out to be visually confusing.
 
-Explicitly not planned: write operations, log viewing, notifications,
-cross-platform support. See `aiDocs/prd.md` for why.
+Explicitly not planned: write operations, log viewing, notifications. Cross-platform
+support was in this category too, until Evan asked for a macOS port on 2026-08-21 (see
+Phase 5) — see `aiDocs/prd.md` for the original Windows-only rationale, now superseded
+for the window/platform layer specifically.
+
+## Phase 5 — macOS port (in progress)
+
+Reference: [2026-08-21-macos-port.md](2026-08-21-macos-port.md),
+[2026-08-21-roadmap-macos-port.md](2026-08-21-roadmap-macos-port.md)
+
+- [x] Compile on macOS (`windows`/`winreg` moved to `cfg(windows)` deps; `console.rs`,
+      `autostart.rs`, `ui/win.rs` cfg-gated)
+- [x] `ui/mac.rs`: non-activating popup via the `NSPanel` class swap
+- [x] `cargo test` — 91/91, matching the documented Windows count exactly (4
+      Windows-only `win.rs` tests replaced one-for-one by 4 macOS `mac.rs` tests)
+- [x] `cargo clippy --all-targets` clean
+- [x] Launch evidence: class swap, KVO self-check and style-mask/level/policy all
+      logged and correct on a real run (`--demo`)
+- [ ] Visual confirm (click-without-activation, keystrokes) — needs Evan, see
+      `MACOS_RUNBOOK.md`
+- [ ] Graceful-exit path (`Popup::restore`, no `NSAutoreleasePool` double-drain) — needs
+      the tray's Quit item, i.e. a mouse; not reachable headlessly
+- [ ] macOS-native data directory (`~/Library/Application Support/actions-monitor`
+      instead of `%APPDATA%`) — found blocking even `--demo` during this work, parked as
+      a separate concern from window behaviour; see the plan doc's "Parked" section
+- [ ] `autostart.rs` macOS arm (`LaunchAgent` plist) — parked, currently returns a clear
+      "not implemented" error instead of pretending
 
 ## Phase Plan & Roadmap Docs
 
 | Phase | Plan | Roadmap | Location |
 | --- | --- | --- | --- |
 | 0-3 | — | — | Built in a single session; this document is the record |
+| 5 | [2026-08-21-macos-port.md](2026-08-21-macos-port.md) | [2026-08-21-roadmap-macos-port.md](2026-08-21-roadmap-macos-port.md) | `ai/roadmaps/` |
 
 <!-- TODO: Phases 0-3 predate the plan/roadmap pair convention. Future phases
      get a YYYY-MM-DD-phase-N-name.md plus YYYY-MM-DD-roadmap-phase-N-name.md

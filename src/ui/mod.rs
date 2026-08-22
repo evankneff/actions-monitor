@@ -13,6 +13,8 @@
 //! front rather than measured: see the fixed-height layout in [`theme`].
 
 pub mod card;
+#[cfg(target_os = "macos")]
+pub mod mac;
 pub mod theme;
 pub mod tray;
 #[cfg(windows)]
@@ -66,9 +68,15 @@ pub struct MonitorApp {
     state: AppState,
     #[cfg(windows)]
     hwnd: Option<HWND>,
+    /// `None` if the native handle could not be resolved, in which case the popup runs
+    /// as an ordinary (focus-stealing) window rather than failing to start.
+    #[cfg(target_os = "macos")]
+    popup: Option<mac::Popup>,
     visible: bool,
     #[cfg(windows)]
     last_placement: Option<Placement>,
+    #[cfg(target_os = "macos")]
+    last_placement: Option<mac::Placement>,
     hover: HoverMap,
     /// `None` in demo mode, and if the tray could not be created - the app is
     /// still perfectly usable without it.
@@ -101,6 +109,24 @@ impl MonitorApp {
             ),
         }
 
+        #[cfg(target_os = "macos")]
+        let popup = {
+            let mtm = objc2::MainThreadMarker::new()
+                .expect("eframe runs the app-creation callback on the main thread");
+            let popup = mac::Popup::adopt(cc, mtm);
+            match &popup {
+                Some(p) => tracing::info!(
+                    "popup window configured: no focus steal, no taskbar entry ({})",
+                    p.diagnostics(mtm)
+                ),
+                None => tracing::warn!(
+                    "could not resolve the native window handle; \
+                     falling back to default window behaviour"
+                ),
+            }
+            popup
+        };
+
         cc.egui_ctx.all_styles_mut(|style| {
             // Single-line everywhere: a wrapped commit subject would make the
             // card taller than the window was sized for.
@@ -128,8 +154,10 @@ impl MonitorApp {
             state: AppState::new(linger),
             #[cfg(windows)]
             hwnd,
+            #[cfg(target_os = "macos")]
+            popup,
             visible: false,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             last_placement: None,
             hover: HoverMap::default(),
             tray,
@@ -329,15 +357,69 @@ impl MonitorApp {
         }
     }
 
-    /// Placeholder until the macOS window is wired in (next commit) - keeps this
-    /// compiling on macOS in the meantime, with no window configuration at all.
-    #[cfg(not(windows))]
+    /// macOS counterpart of the Windows `reposition` above. Points, not pixels or
+    /// physical anything - AppKit frames are already logical, so there is no DPI
+    /// scale-factor arithmetic here at all (see `mac::Placement`'s doc comment).
+    #[cfg(target_os = "macos")]
+    fn reposition(&mut self, _ctx: &Context) {
+        let Some(popup) = &self.popup else { return };
+        let mtm = objc2::MainThreadMarker::new().expect("egui runs on the main thread");
+        let Some(work) = popup.work_area(mtm) else {
+            return;
+        };
+
+        let placement = mac::bottom_left(
+            work,
+            f64::from(theme::WINDOW_WIDTH),
+            f64::from(self.wanted_height()).max(1.0),
+            f64::from(theme::SCREEN_MARGIN),
+        );
+
+        if self.last_placement != Some(placement) {
+            popup.place(placement, mtm);
+            self.last_placement = Some(placement);
+        }
+    }
+
+    /// macOS counterpart of the Windows `enforce_styles` above. No hide/show dance:
+    /// unlike Windows, `setStyleMask:`/`setLevel:` take effect immediately on macOS and
+    /// nothing on the show/hide path itself rebuilds them (see `mac::Popup::enforce`'s
+    /// doc comment) - measured zero corrections across every run of the spike this was
+    /// modelled on.
+    #[cfg(target_os = "macos")]
+    fn enforce_styles(&mut self) {
+        let Some(popup) = &self.popup else { return };
+        if popup.enforce() {
+            tracing::debug!("re-asserted popup style mask / level / collection behaviour");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn update_visibility(&mut self) {
+        let Some(popup) = &self.popup else { return };
+        let wanted = !self.state.is_empty();
+
+        if wanted && !self.visible {
+            popup.show();
+            self.visible = true;
+            tracing::debug!(cards = self.state.cards().len(), "popup shown");
+        } else if !wanted && self.visible {
+            popup.hide();
+            self.visible = false;
+            self.hover = HoverMap::default();
+            tracing::debug!("popup hidden");
+        }
+    }
+
+    /// Neither Windows nor macOS: no window-control backend exists, so this is a no-op
+    /// rather than a compile failure. Not a supported target for this app today.
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn reposition(&mut self, _ctx: &Context) {}
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn enforce_styles(&mut self) {}
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn update_visibility(&mut self) {}
 
     fn apply_action(&mut self, action: Action) {
@@ -375,6 +457,18 @@ impl eframe::App for MonitorApp {
         // Fully transparent: only the cards are painted, so the gaps between
         // them and their rounded corners show the desktop through.
         [0.0, 0.0, 0.0, 0.0]
+    }
+
+    /// Undo the class swap while winit's window and delegate are still alive.
+    ///
+    /// eframe calls this before it tears the window down, which is why it is used
+    /// instead of a `Drop` impl - see `mac::Popup::restore`. Without it the process
+    /// still exits 0, but prints an `NSAutoreleasePool` double-drain message.
+    #[cfg(target_os = "macos")]
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some(popup) = &self.popup {
+            popup.restore();
+        }
     }
 
     /// Runs whether or not the window is visible.

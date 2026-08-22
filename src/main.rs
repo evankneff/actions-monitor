@@ -265,6 +265,24 @@ fn run(args: &Args, has_console: bool) -> Result<()> {
     let backend_reloader = reloader.clone();
     let native_options = eframe::NativeOptions {
         viewport: ui::viewport(),
+
+        // winit applies all three of these inside `applicationDidFinishLaunching:`,
+        // before any of our own code runs, so there is no correcting them after the
+        // fact - this is eframe's only hook onto winit's own event-loop builder.
+        // `with_activate_ignoring_other_apps(false)` is the important one: winit calls
+        // `-[NSApp activateIgnoringOtherApps:]` unconditionally at launch with a
+        // default of `true`, which yanks focus off whatever the user is doing. That is
+        // an *application*-level activation, so no amount of per-window configuration
+        // (`mac::Popup`) undoes it.
+        #[cfg(target_os = "macos")]
+        event_loop_builder: Some(Box::new(|builder| {
+            use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
+            builder
+                .with_activation_policy(ActivationPolicy::Accessory)
+                .with_activate_ignoring_other_apps(false)
+                .with_default_menu(false);
+        })),
+
         ..Default::default()
     };
 
