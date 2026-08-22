@@ -1,5 +1,6 @@
-//! Logging to `%APPDATA%\actions-monitor\logs\`, plus the console when there
-//! is one.
+//! Logging to `paths::log_dir()` (`%APPDATA%\actions-monitor\logs\` on Windows,
+//! `~/Library/Application Support/actions-monitor/logs/` on macOS), plus the console
+//! when there is one.
 
 use anyhow::{Context, Result};
 use tracing_appender::non_blocking::WorkerGuard;

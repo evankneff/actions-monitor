@@ -1,4 +1,6 @@
-//! Parsing, validation and hot-reloading of `%APPDATA%\actions-monitor\config.toml`.
+//! Parsing, validation and hot-reloading of `config.toml`, found via `paths::data_dir`
+//! (`%APPDATA%\actions-monitor` on Windows, `~/Library/Application Support/actions-monitor`
+//! on macOS).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -33,7 +33,24 @@ use tokio::sync::watch;
 use history::History;
 use model::Snapshot;
 
-const HELP: &str = "\
+/// `paths::data_dir()`'s three files, spelled out for `--help` with the right path
+/// separator for each platform. Autostart is still Windows-only (`--install-autostart`
+/// et al. return a clear "not yet implemented" error on macOS; see `autostart.rs`), so
+/// that FILES entry is not duplicated here.
+#[cfg(windows)]
+const FILES_HELP: &str = "\
+    %APPDATA%\\actions-monitor\\config.toml    accounts, tokens and timings
+    %APPDATA%\\actions-monitor\\history.json   past run durations, for estimates
+    %APPDATA%\\actions-monitor\\logs\\          rolling daily log files";
+#[cfg(target_os = "macos")]
+const FILES_HELP: &str = "\
+    ~/Library/Application Support/actions-monitor/config.toml    accounts, tokens and timings
+    ~/Library/Application Support/actions-monitor/history.json   past run durations, for estimates
+    ~/Library/Application Support/actions-monitor/logs/          rolling daily log files";
+
+fn help() -> String {
+    format!(
+        "\
 actions-monitor - a desktop popup for running GitHub Actions workflows
 
 USAGE:
@@ -57,10 +74,10 @@ OPTIONS:
     -V, --version           Show the version.
 
 FILES:
-    %APPDATA%\\actions-monitor\\config.toml    accounts, tokens and timings
-    %APPDATA%\\actions-monitor\\history.json   past run durations, for estimates
-    %APPDATA%\\actions-monitor\\logs\\          rolling daily log files
-";
+{FILES_HELP}
+"
+    )
+}
 
 #[derive(Debug, Default)]
 struct Args {
@@ -138,7 +155,7 @@ fn run_command(command: Command, args: &Args) -> i32 {
     match command {
         Command::Check => run_check(args),
         Command::Help => {
-            println!("{HELP}");
+            println!("{}", help());
             0
         }
         Command::Version => {

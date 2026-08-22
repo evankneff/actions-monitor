@@ -1,7 +1,8 @@
 # actions-monitor configuration
 #
-# This file lives at %APPDATA%\actions-monitor\config.toml and is re-read
-# automatically whenever you save it -- no restart needed.
+# This file lives at %APPDATA%\actions-monitor\config.toml on Windows, or
+# ~/Library/Application Support/actions-monitor/config.toml on macOS, and is
+# re-read automatically whenever you save it -- no restart needed.
 #
 # ---------------------------------------------------------------------------
 # 1. Create a personal access token for each GitHub account
