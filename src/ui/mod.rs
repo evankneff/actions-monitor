@@ -15,6 +15,7 @@
 pub mod card;
 pub mod theme;
 pub mod tray;
+#[cfg(windows)]
 pub mod win;
 
 use std::collections::HashMap;
@@ -24,12 +25,14 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use egui::Context;
 use tokio::sync::watch;
+#[cfg(windows)]
 use windows::Win32::Foundation::HWND;
 
 use crate::config::{Reloaded, Reloader};
 use crate::model::{RunKey, Snapshot};
 use crate::state::AppState;
 use tray::{Tray, TrayCommand, TrayState};
+#[cfg(windows)]
 use win::Placement;
 
 /// Tick rate while the window is on screen (elapsed times, pulsing bar).
@@ -61,8 +64,10 @@ enum Action {
 pub struct MonitorApp {
     snapshot_rx: watch::Receiver<Arc<Snapshot>>,
     state: AppState,
+    #[cfg(windows)]
     hwnd: Option<HWND>,
     visible: bool,
+    #[cfg(windows)]
     last_placement: Option<Placement>,
     hover: HoverMap,
     /// `None` in demo mode, and if the tray could not be created - the app is
@@ -79,7 +84,9 @@ impl MonitorApp {
         reloader: Option<Arc<Reloader>>,
         want_tray: bool,
     ) -> Self {
+        #[cfg(windows)]
         let hwnd = win::hwnd_of(cc);
+        #[cfg(windows)]
         match hwnd {
             Some(hwnd) => {
                 win::configure(hwnd);
@@ -119,8 +126,10 @@ impl MonitorApp {
         Self {
             snapshot_rx,
             state: AppState::new(linger),
+            #[cfg(windows)]
             hwnd,
             visible: false,
+            #[cfg(windows)]
             last_placement: None,
             hover: HoverMap::default(),
             tray,
@@ -262,6 +271,7 @@ impl MonitorApp {
     /// Resize and re-anchor the window to the bottom-left of the primary
     /// monitor's work area. Re-read every tick, so a resolution change, a moved
     /// taskbar or a DPI change is picked up without a restart.
+    #[cfg(windows)]
     fn reposition(&mut self, ctx: &Context) {
         let Some(hwnd) = self.hwnd else { return };
 
@@ -289,6 +299,7 @@ impl MonitorApp {
     /// Windows only re-evaluates taskbar presence when a window is shown, so if
     /// the styles were clobbered while the popup was on screen, hide and show it
     /// again to make the correction take effect.
+    #[cfg(windows)]
     fn enforce_styles(&mut self) {
         let Some(hwnd) = self.hwnd else { return };
         if !win::configure(hwnd) {
@@ -301,6 +312,7 @@ impl MonitorApp {
         }
     }
 
+    #[cfg(windows)]
     fn update_visibility(&mut self) {
         let Some(hwnd) = self.hwnd else { return };
         let wanted = !self.state.is_empty();
@@ -316,6 +328,17 @@ impl MonitorApp {
             tracing::debug!("popup hidden");
         }
     }
+
+    /// Placeholder until the macOS window is wired in (next commit) - keeps this
+    /// compiling on macOS in the meantime, with no window configuration at all.
+    #[cfg(not(windows))]
+    fn reposition(&mut self, _ctx: &Context) {}
+
+    #[cfg(not(windows))]
+    fn enforce_styles(&mut self) {}
+
+    #[cfg(not(windows))]
+    fn update_visibility(&mut self) {}
 
     fn apply_action(&mut self, action: Action) {
         match action {
