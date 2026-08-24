@@ -34,8 +34,10 @@ watching a few dozen repos costs essentially no rate limit.
 | 5 | Estimated progress bar |
 
 Clicking anywhere else on a card opens that run on github.com in your default
-browser. A card you dismiss with `✕` stays dismissed for the rest of that run,
-even while it is still going.
+browser. Dismissing a card with `✕` gets it out of your way for the rest of the
+run — but if the run was still going when you closed it, the card comes back for
+15 seconds when it finishes, so you still see how it ended. Dismissing a card
+that has already finished is final.
 
 The left stripe and the bar are colour-coded: blue while running, grey while
 queued, then green / red / amber for success, failure and cancellation. When the

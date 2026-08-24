@@ -4,6 +4,18 @@ This is meant to be a CONCISE list of changes to track as we develop this projec
 
 ## 2026-08-21 — v0.1.1
 
+- A card closed with its X while the run was still going now comes back for 15s
+  (`RECALL_LINGER`) once the run finishes, so getting the popup out of the way
+  never costs you the result. Closing a card that had already finished is still
+  final. Verified with `--demo`: a card closed mid-run reappeared reporting its
+  conclusion.
+
+- Fix: Windows 11's compositor drew rounded corners and a pale 1px border around
+  the borderless popup, which read as a white box floating around the card stack.
+  `win::strip_dwm_frame` now sets `DWMWA_WINDOW_CORNER_PREFERENCE` to
+  `DWMWCP_DONOTROUND` and `DWMWA_BORDER_COLOR` to `DWMWA_COLOR_NONE` once at
+  startup. Verified by running `--demo` and screenshotting the popup.
+
 - Fix: the app was killed whenever the terminal it was launched from was closed.
   It called `AttachConsole(ATTACH_PARENT_PROCESS)` on the normal launch path, and
   Windows terminates every process attached to a console when that window closes.

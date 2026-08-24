@@ -83,6 +83,7 @@ impl MonitorApp {
         match hwnd {
             Some(hwnd) => {
                 win::configure(hwnd);
+                win::strip_dwm_frame(hwnd);
                 tracing::info!(
                     hwnd = ?hwnd.0,
                     "popup window configured: no focus steal, no taskbar entry"

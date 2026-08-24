@@ -5,7 +5,7 @@
 //! five seconds and make the stack visibly flicker, so cards are matched by
 //! [`RunKey`] and updated in place.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use crate::model::{AccountIssue, RunKey, RunStatus, RunView, Snapshot, WatchedRepo};
@@ -16,6 +16,10 @@ pub const ISSUE_TTL: Duration = Duration::from_secs(30);
 pub const NOTICE_TTL: Duration = Duration::from_secs(6);
 /// How long the watched-repos panel stays up before closing itself.
 pub const PANEL_TTL: Duration = Duration::from_secs(45);
+/// How long a card that was closed mid-run stays up when it comes back to
+/// report the result. Longer than the normal linger: the user is not watching
+/// this one, so it has to survive being glanced at late.
+pub const RECALL_LINGER: Duration = Duration::from_secs(15);
 
 /// A short message the UI raises for itself, in response to something the user
 /// just did - as opposed to an [`AccountIssue`], which comes from the backend.
@@ -33,13 +37,35 @@ pub struct Card {
     pub view: RunView,
     /// When this card first appeared, used for the slide/fade-in animation.
     pub first_seen: Instant,
+    /// True if the user closed this card while the run was still going and it
+    /// has come back to report the result. Such a card lives for
+    /// [`RECALL_LINGER`] from the moment it reappeared, not from the moment the
+    /// run finished - the run may well have finished before we noticed.
+    pub recalled: bool,
 }
 
 impl Card {
+    /// When the card's countdown started, or `None` while it is still running.
+    fn countdown_from(&self) -> Option<Instant> {
+        if self.recalled {
+            Some(self.first_seen)
+        } else {
+            self.view.finished_at
+        }
+    }
+
+    fn linger(&self, configured: Duration) -> Duration {
+        if self.recalled {
+            RECALL_LINGER
+        } else {
+            configured
+        }
+    }
+
     /// Whether the card has outlived its post-completion linger.
     fn expired(&self, now: Instant, linger: Duration) -> bool {
-        match self.view.finished_at {
-            Some(finished) => now.saturating_duration_since(finished) >= linger,
+        match self.countdown_from() {
+            Some(start) => now.saturating_duration_since(start) >= self.linger(linger),
             None => false,
         }
     }
@@ -48,9 +74,12 @@ impl Card {
 #[derive(Debug, Default)]
 pub struct AppState {
     cards: Vec<Card>,
-    /// Runs the user closed with the card's X. They stay dismissed for as long
-    /// as the backend keeps reporting them, even while still running.
-    dismissed: HashSet<RunKey>,
+    /// Runs the user closed with the card's X, mapped to whether the run was
+    /// still going at the time. They stay dismissed for as long as the backend
+    /// keeps reporting them; one closed mid-run is un-dismissed once it
+    /// finishes, so the result still gets seen. Closing a card that had already
+    /// finished means "I am done with this", and is final.
+    dismissed: HashMap<RunKey, bool>,
     issues: Vec<AccountIssue>,
     dismissed_issues: HashSet<String>,
     /// Every issue the backend currently reports, ignoring dismissal and the
@@ -85,16 +114,24 @@ impl AppState {
 
         // A run we no longer hear about can never come back, so forget that it
         // was dismissed; otherwise the set grows for the life of the process.
-        self.dismissed.retain(|key| incoming.contains(key));
+        self.dismissed.retain(|key, _| incoming.contains(key));
 
         // Drop cards whose run left the snapshot.
         self.cards.retain(|card| incoming.contains(&card.view.key));
 
         // Update in place, collecting the ones we have not seen before.
         let mut fresh: Vec<&RunView> = Vec::new();
+        let mut recalled: HashSet<&RunKey> = HashSet::new();
         for run in &snapshot.runs {
-            if self.dismissed.contains(&run.key) {
-                continue;
+            match self.dismissed.get(&run.key) {
+                // Closed mid-run and now finished: bring it back to report the
+                // result, and let it be closed for good this time.
+                Some(true) if run.status == RunStatus::Completed => {
+                    self.dismissed.remove(&run.key);
+                    recalled.insert(&run.key);
+                }
+                Some(_) => continue,
+                None => {}
             }
             match self.cards.iter_mut().find(|c| c.view.key == run.key) {
                 Some(card) => card.view = run.clone(),
@@ -110,9 +147,17 @@ impl AppState {
                 .then_with(|| a.key.cmp(&b.key))
         });
         for run in fresh {
+            let recalled = recalled.contains(&run.key);
+            if recalled {
+                tracing::debug!(
+                    run_id = run.key.run_id,
+                    "a card closed mid-run is coming back to report the result"
+                );
+            }
             self.cards.push(Card {
                 view: run.clone(),
                 first_seen: now,
+                recalled,
             });
         }
 
@@ -218,7 +263,14 @@ impl AppState {
     }
 
     pub fn dismiss(&mut self, key: &RunKey) {
-        self.dismissed.insert(key.clone());
+        // Remember whether there was still something to wait for: only a run
+        // that was live when it was closed earns a second appearance.
+        let still_running = self
+            .cards
+            .iter()
+            .find(|card| &card.view.key == key)
+            .is_some_and(|card| card.view.status.is_active());
+        self.dismissed.insert(key.clone(), still_running);
         self.cards.retain(|card| &card.view.key != key);
     }
 
@@ -231,10 +283,10 @@ impl AppState {
     /// anything, so a hidden window knows when to wake up.
     pub fn next_expiry(&self, now: Instant) -> Option<Duration> {
         let cards = self.cards.iter().filter_map(|card| {
-            let finished = card.view.finished_at?;
+            let start = card.countdown_from()?;
             Some(
-                self.linger
-                    .saturating_sub(now.saturating_duration_since(finished)),
+                card.linger(self.linger)
+                    .saturating_sub(now.saturating_duration_since(start)),
             )
         });
         let issues = self
@@ -406,14 +458,67 @@ mod tests {
         state.dismiss(&RunKey::new("personal", 1));
         assert!(state.cards().is_empty());
 
-        // The backend still reports the run; it must not come back.
+        // The backend still reports the run; it must not come back while it is
+        // still going - that is the whole point of closing it.
         state.apply(&snapshot(vec![run(1, RunStatus::InProgress)]), now);
         assert!(state.cards().is_empty(), "a dismissed run must not reappear");
+    }
 
-        // ...and neither should its completion.
+    #[test]
+    fn a_run_closed_mid_flight_comes_back_to_report_its_result() {
+        let now = Instant::now();
+        let mut state = AppState::new(Duration::from_secs(8));
+        state.apply(&snapshot(vec![run(1, RunStatus::InProgress)]), now);
+        state.dismiss(&RunKey::new("personal", 1));
+        assert!(state.cards().is_empty());
+
         let mut done = run(1, RunStatus::Completed);
         done.conclusion = Some(Conclusion::Success);
         done.finished_at = Some(now);
+        state.apply(&snapshot(vec![done.clone()]), now);
+        assert_eq!(state.cards().len(), 1, "the result is worth interrupting for");
+        assert!(state.cards()[0].recalled);
+
+        // It stays up for the recall window rather than the ordinary linger,
+        // measured from when it came back rather than when the run ended.
+        state.retire_expired(now + RECALL_LINGER - Duration::from_secs(1));
+        assert_eq!(state.cards().len(), 1);
+        assert_eq!(state.next_expiry(now), Some(RECALL_LINGER));
+
+        state.retire_expired(now + RECALL_LINGER);
+        assert!(state.cards().is_empty());
+    }
+
+    #[test]
+    fn a_recalled_card_closed_again_stays_closed() {
+        let now = Instant::now();
+        let mut state = AppState::new(Duration::from_secs(8));
+        state.apply(&snapshot(vec![run(1, RunStatus::InProgress)]), now);
+        state.dismiss(&RunKey::new("personal", 1));
+
+        let mut done = run(1, RunStatus::Completed);
+        done.conclusion = Some(Conclusion::Success);
+        done.finished_at = Some(now);
+        state.apply(&snapshot(vec![done.clone()]), now);
+        state.dismiss(&RunKey::new("personal", 1));
+
+        state.apply(&snapshot(vec![done]), now);
+        assert!(
+            state.cards().is_empty(),
+            "closing a finished card means done with it, not show me again"
+        );
+    }
+
+    #[test]
+    fn a_finished_card_closed_on_sight_does_not_come_back() {
+        let now = Instant::now();
+        let mut state = AppState::new(Duration::from_secs(8));
+        let mut done = run(1, RunStatus::Completed);
+        done.conclusion = Some(Conclusion::Failure);
+        done.finished_at = Some(now);
+        state.apply(&snapshot(vec![done.clone()]), now);
+
+        state.dismiss(&RunKey::new("personal", 1));
         state.apply(&snapshot(vec![done]), now);
         assert!(state.cards().is_empty());
     }

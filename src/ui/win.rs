@@ -9,6 +9,10 @@ use std::ffi::c_void;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Graphics::Dwm::{
+    DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+    DWM_WINDOW_CORNER_PREFERENCE, DwmSetWindowAttribute,
+};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromPoint,
 };
@@ -101,6 +105,33 @@ pub fn configure(hwnd: HWND) -> bool {
     }
 }
 
+/// Strip the frame the desktop compositor draws around every top-level window.
+///
+/// Windows 11 rounds the corners of, and draws a 1px border around, even a
+/// borderless `WS_POPUP` window - which on this transparent overlay reads as a
+/// pale box floating around the card stack. Both are DWM attributes rather than
+/// window styles, so winit cannot clobber them and this only needs saying once.
+///
+/// Both calls fail harmlessly on Windows 10, where neither attribute exists.
+pub fn strip_dwm_frame(hwnd: HWND) {
+    unsafe {
+        let corners: DWM_WINDOW_CORNER_PREFERENCE = DWMWCP_DONOTROUND;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            std::ptr::from_ref(&corners).cast(),
+            size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+        );
+        let border: u32 = DWMWA_COLOR_NONE;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            std::ptr::from_ref(&border).cast(),
+            size_of::<u32>() as u32,
+        );
+    }
+}
+
 /// Move and resize without activating, keeping the window topmost.
 pub fn apply_placement(hwnd: HWND, placement: Placement) {
     unsafe {
@@ -121,7 +152,13 @@ pub fn apply_placement(hwnd: HWND, placement: Placement) {
 
 /// Show without taking focus. `SW_SHOWNOACTIVATE` is the whole point here:
 /// `SW_SHOW` would pull the foreground away from whatever the user is doing.
+///
+/// The DWM frame is stripped again on the way in: winit rebuilds window
+/// attributes behind our back, and the border is only ever visible while the
+/// window is on screen, so re-asserting it here costs two calls per appearance
+/// and closes off any path that could put it back.
 pub fn show(hwnd: HWND) {
+    strip_dwm_frame(hwnd);
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     }
