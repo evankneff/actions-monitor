@@ -225,6 +225,9 @@ fn run_check(args: &Args) -> i32 {
 
 fn run(args: &Args, has_console: bool) -> Result<()> {
     let _log_guard = logging::init(has_console && args.console, args.verbose)?;
+    // Installed as soon as there is somewhere for it to write, and before any
+    // of the work below can panic.
+    logging::install_panic_hook();
 
     let config_path = match &args.config {
         Some(path) => path.clone(),
@@ -268,7 +271,7 @@ fn run(args: &Args, has_console: bool) -> Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native(
+    let outcome = eframe::run_native(
         "actions-monitor",
         native_options,
         Box::new(move |cc| {
@@ -284,9 +287,21 @@ fn run(args: &Args, has_console: bool) -> Result<()> {
                 want_tray,
             )))
         }),
-    )
-    .map_err(|err| anyhow::anyhow!("{err}"))
-    .context("running the popup window")
+    );
+
+    // A quiet `Ok` here is not proof of a healthy shutdown: losing the GL
+    // context - which is what a resume from sleep did on 2026-08-24 - ends the
+    // winit loop exactly the way the tray's Quit does. Mark every exit, so an
+    // `Ok` with no "quitting on request from the tray menu" line above it reads
+    // as "something tore the window down underneath us" rather than as silence.
+    // The `Err` arm is left to `main`, which logs it as `fatal:`.
+    if outcome.is_ok() {
+        tracing::info!("event loop ended; actions-monitor is exiting");
+    }
+
+    outcome
+        .map_err(|err| anyhow::anyhow!("{err}"))
+        .context("running the popup window")
 }
 
 /// Load the config, creating and opening the template if this is a first run.

@@ -4,6 +4,24 @@ This is meant to be a CONCISE list of changes to track as we develop this projec
 
 ## 2026-08-21 — v0.1.1
 
+- Diagnosability: panics are now logged. Release builds are
+  `windows_subsystem = "windows"`, so the default hook wrote the message to a
+  stderr nobody was attached to and the process vanished leaving no trace -
+  which is how the 2026-08-24 exit went unexplained. `logging::install_panic_hook`
+  records the message, thread, `file:line` and a backtrace, then chains to the
+  previous hook so `--console` still prints. Verified by arming a temporary
+  panic in both debug and release and reading the entry back out of the log.
+
+- `run` now logs `event loop ended; actions-monitor is exiting` when
+  `run_native` returns `Ok`. A clean return is not proof of a healthy shutdown:
+  losing the GL context ends the winit loop exactly like the tray Quit does, so
+  an exit line with no "quitting on request from the tray menu" above it is the
+  signature of the window being torn down underneath us. Verified with `--demo`
+  plus a `taskkill` WM_CLOSE.
+
+  Known gap: `strip = true` and no PDB mean release backtraces show app frames
+  as `__ImageBase`. The message and `file:line` survive; the frame names do not.
+
 - A card closed with its X while the run was still going now comes back for 15s
   (`RECALL_LINGER`) once the run finishes, so getting the popup out of the way
   never costs you the result. Closing a card that had already finished is still
