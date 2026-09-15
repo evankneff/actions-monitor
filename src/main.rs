@@ -22,10 +22,13 @@ mod model;
 mod paths;
 mod poller;
 mod state;
+mod supervisor;
 mod ui;
 
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use tokio::sync::watch;
@@ -125,12 +128,37 @@ fn main() {
     // launch still attaches to a parent terminal if there is one.
     let has_console = console::attach(args.console);
 
+    // The guard has to outlive every line we might still want to write. It used
+    // to live inside `run`, which meant the log-writing thread was already shut
+    // down by the time the `fatal:` line below reached it - so a startup failure
+    // left nothing in the log but "actions-monitor starting".
+    let _log_guard = match logging::init(has_console && args.console, args.verbose) {
+        Ok(guard) => guard,
+        Err(err) => {
+            report_fatal(&format!("{err:#}"), has_console);
+            std::process::exit(1);
+        }
+    };
+    // Installed as soon as there is somewhere for it to write, and before any of
+    // the work below can panic.
+    logging::install_panic_hook();
+
     if let Err(err) = run(&args, has_console) {
         tracing::error!("fatal: {err:#}");
-        if has_console {
-            eprintln!("actions-monitor: {err:#}");
-        }
+        report_fatal(&format!("{err:#}"), has_console);
         std::process::exit(1);
+    }
+}
+
+/// Put a fatal startup error somewhere a person will actually see it.
+///
+/// Without a console this is a Windows-subsystem process with no window yet, so
+/// `eprintln!` goes nowhere and the app just fails to appear.
+fn report_fatal(message: &str, has_console: bool) {
+    if has_console {
+        eprintln!("actions-monitor: {message}");
+    } else {
+        console::error_dialog("actions-monitor could not start", message);
     }
 }
 
@@ -224,11 +252,6 @@ fn run_check(args: &Args) -> i32 {
 }
 
 fn run(args: &Args, has_console: bool) -> Result<()> {
-    let _log_guard = logging::init(has_console && args.console, args.verbose)?;
-    // Installed as soon as there is somewhere for it to write, and before any
-    // of the work below can panic.
-    logging::install_panic_hook();
-
     let config_path = match &args.config {
         Some(path) => path.clone(),
         None => paths::config_path()?,
@@ -271,37 +294,61 @@ fn run(args: &Args, has_console: bool) -> Result<()> {
         ..Default::default()
     };
 
-    let outcome = eframe::run_native(
-        "actions-monitor",
-        native_options,
-        Box::new(move |cc| {
-            // The backend only exists once we have an egui Context to wake.
-            let ctx = cc.egui_ctx.clone();
-            if let Err(err) = start_backend(ctx, snapshot_tx, config_rx, backend_reloader, demo) {
-                tracing::error!("could not start the polling backend: {err:#}");
-            }
-            Ok(Box::new(ui::MonitorApp::new(
-                cc,
-                snapshot_rx,
-                reloader,
-                want_tray,
-            )))
-        }),
-    );
+    let started = Instant::now();
+    // eframe panics rather than returning when it loses the GL context on a
+    // resume from sleep, so the panic is as much an expected end to the event
+    // loop as a clean return is. Catching it here keeps both on the same path;
+    // the panic hook has already written the message and backtrace to the log.
+    let outcome = std::panic::catch_unwind(AssertUnwindSafe(move || {
+        eframe::run_native(
+            "actions-monitor",
+            native_options,
+            Box::new(move |cc| {
+                // The backend only exists once we have an egui Context to wake.
+                let ctx = cc.egui_ctx.clone();
+                if let Err(err) = start_backend(ctx, snapshot_tx, config_rx, backend_reloader, demo)
+                {
+                    tracing::error!("could not start the polling backend: {err:#}");
+                }
+                Ok(Box::new(ui::MonitorApp::new(
+                    cc,
+                    snapshot_rx,
+                    reloader,
+                    want_tray,
+                )))
+            }),
+        )
+    }));
 
-    // A quiet `Ok` here is not proof of a healthy shutdown: losing the GL
-    // context - which is what a resume from sleep did on 2026-08-24 - ends the
-    // winit loop exactly the way the tray's Quit does. Mark every exit, so an
-    // `Ok` with no "quitting on request from the tray menu" line above it reads
-    // as "something tore the window down underneath us" rather than as silence.
-    // The `Err` arm is left to `main`, which logs it as `fatal:`.
-    if outcome.is_ok() {
+    let failure = match outcome {
+        Ok(Ok(())) => None,
+        Ok(Err(err)) => Some(format!("{err}")),
+        Err(_) => Some("the window thread panicked".to_owned()),
+    };
+
+    if ui::quit_requested() {
         tracing::info!("event loop ended; actions-monitor is exiting");
+        return match failure {
+            None => Ok(()),
+            Some(reason) => Err(anyhow::anyhow!("{reason}")).context("running the popup window"),
+        };
     }
 
-    outcome
-        .map_err(|err| anyhow::anyhow!("{err}"))
-        .context("running the popup window")
+    // Nobody asked for this. A resume from sleep either ends the winit loop
+    // exactly the way Quit does or panics inside eframe making the GL context
+    // current; from here both mean the same thing - the window is gone and the
+    // app is about to become a process nobody can see. Come back instead.
+    let reason = failure.unwrap_or_else(|| "the event loop returned on its own".to_owned());
+    tracing::warn!("the window went away without being asked to ({reason}); restarting");
+
+    match supervisor::respawn(started.elapsed()) {
+        supervisor::Restart::Started | supervisor::Restart::SessionEnding => Ok(()),
+        // The end of the line: say so, rather than leaving the user with yet
+        // another disappearance they have to work out for themselves.
+        supervisor::Restart::GaveUp => Err(anyhow::anyhow!(
+            "the popup window keeps dying and restarting it is not helping ({reason})"
+        )),
+    }
 }
 
 /// Load the config, creating and opening the template if this is a first run.

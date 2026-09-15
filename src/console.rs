@@ -3,6 +3,10 @@
 //! No console is exactly what you want for a background app started at login,
 //! but it would also mean `--install-autostart` and `--help` printed into the
 //! void. This restores stdout when there is somewhere sensible to send it.
+//!
+//! `error_dialog` covers the other half of the same problem: telling a person
+//! something when there is no console to print it to and no window to draw it
+//! in.
 
 use windows::Win32::Foundation::{GENERIC_WRITE, HANDLE};
 use windows::Win32::Storage::FileSystem::{
@@ -12,7 +16,10 @@ use windows::Win32::System::Console::{
     ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole, FreeConsole, GetStdHandle,
     STD_ERROR_HANDLE, STD_OUTPUT_HANDLE, SetStdHandle,
 };
-use windows::core::w;
+use windows::Win32::UI::WindowsAndMessaging::{
+    MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW,
+};
+use windows::core::{HSTRING, w};
 
 /// Make sure this process can print, and report whether it can.
 ///
@@ -53,6 +60,26 @@ pub fn attach(allocate: bool) -> bool {
 pub fn detach() {
     unsafe {
         let _ = FreeConsole();
+    }
+}
+
+/// Say something to the user with no console and no window to say it in.
+///
+/// Deliberately the one place this app is allowed to interrupt. Everything else
+/// here exists to stay out of the way, but a startup failure means there will be
+/// no tray icon, no popup and no app at all, and silence at that point is
+/// indistinguishable from "it is running fine and nothing is building" - which
+/// is precisely how a broken config went unnoticed for hours.
+///
+/// Blocks until dismissed, so only call it on the way out.
+pub fn error_dialog(title: &str, body: &str) {
+    unsafe {
+        MessageBoxW(
+            None,
+            &HSTRING::from(body),
+            &HSTRING::from(title),
+            MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST,
+        );
     }
 }
 

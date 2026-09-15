@@ -31,7 +31,7 @@ taskbar, never asks for attention, and disappears on its own.
 
 ## Current State
 
-**v0.1.0 — feature-complete and in daily use.** 91 unit tests pass, clippy is
+**v0.1.2 — feature-complete and in daily use.** 100 unit tests pass, clippy is
 clean, and the binary is deployed and running against live GitHub accounts.
 
 Built and verified:

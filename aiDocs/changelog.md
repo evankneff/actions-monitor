@@ -18,6 +18,30 @@ This is meant to be a CONCISE list of changes to track as we develop this projec
   Installed and restarted with a backup of the previous executable.
   Plan: [popup frame](../ai/roadmaps/complete/2026-09-15-phase-5-popup-frame.md).
 
+## 2026-09-03 — v0.1.2
+
+- Fix: the app no longer disappears over a sleep/resume. eframe's glow backend
+  calls `make_current(..).unwrap()`, so an OpenGL surface invalidated by a resume
+  panics the process at 4am and there is nothing left to come back to when the
+  machine wakes. The same event can instead just end the winit loop, which is
+  indistinguishable from the tray's Quit. `supervisor::respawn` now starts a
+  fresh process whenever the event loop ends and `ui::quit_requested()` is false,
+  covering both. A strike counter passed down in `ACTIONS_MONITOR_RESPAWN` stops
+  the chain after 3 restarts that each died within 60s, and `SM_SHUTTINGDOWN` is
+  checked first so signing out does not spawn a process into a dying session.
+  Verified in release by posting WM_CLOSE to the demo window: the process was
+  replaced 3s later with its arguments intact, and with the strike count
+  pre-seeded at 3 it stopped and said so instead.
+
+- Fix: a startup failure was completely silent. The `LogGuard` lived in `run`,
+  so the log-writing thread was already shut down by the time `main` wrote its
+  `fatal:` line - an invalid config left nothing in the log but
+  `actions-monitor starting`, and a `windows_subsystem = "windows"` build has no
+  stderr to print to either. The guard now lives in `main`, and
+  `console::error_dialog` puts the reason on screen when there is no console.
+  Verified with a bad config both ways: the `fatal:` line reached the log file,
+  and a launch with no parent console showed a dialog naming the offending line.
+
 ## 2026-08-21 — v0.1.1
 
 - Diagnosability: panics are now logged. Release builds are

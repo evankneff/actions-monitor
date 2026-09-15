@@ -19,6 +19,7 @@ pub mod win;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
@@ -40,6 +41,18 @@ const LINGER_TICK: Duration = Duration::from_millis(200);
 /// Safety-net tick while hidden. New snapshots wake us immediately through
 /// `Context::request_repaint`; this only covers anything that slips past that.
 const IDLE_TICK: Duration = Duration::from_secs(5);
+
+/// Set when the user picks Quit, and never cleared.
+///
+/// Losing the GL surface on a resume from sleep ends the event loop exactly the
+/// way Quit does, so the return value of `run_native` cannot tell the two apart.
+/// This can: if the loop ended and nobody set this, the window was taken from us.
+static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the event loop ended because the user asked it to.
+pub fn quit_requested() -> bool {
+    QUIT_REQUESTED.load(Ordering::SeqCst)
+}
 
 /// Which element the pointer was over last frame, so backgrounds can light up
 /// before this frame's response for that card exists.
@@ -142,6 +155,7 @@ impl MonitorApp {
                 TrayCommand::ToggleAutostart => self.toggle_autostart(),
                 TrayCommand::Quit => {
                     tracing::info!("quitting on request from the tray menu");
+                    QUIT_REQUESTED.store(true, Ordering::SeqCst);
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
