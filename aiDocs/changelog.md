@@ -2,6 +2,22 @@ This is meant to be a CONCISE list of changes to track as we develop this projec
 
 ---
 
+## 2026-09-15 - Popup frame and idle visibility
+
+- Remove the native caption/edge styles behind the card stack. Start the
+  viewport hidden with decorations enabled, then convert it to WS_POPUP before
+  showing: egui-winit 0.36.1 otherwise enables its Windows shadow and one-pixel
+  top edge, ignoring `has_shadow(false)` (macOS only).
+- Reconcile visibility with IsWindowVisible instead of the previous tick's
+  flag. Keep the last useful size while idle instead of resizing to a one-pixel
+  strip, and skip card painting when empty.
+- 97 tests pass for the isolated commit; clippy is clean. The full local build
+  also passed its 100 tests and formatting checks for the changed UI files.
+  Release demo verified running/completed cards, idle, reappearance and forced
+  frame/visibility resets: zero stray top-edge pixels and no focus changes.
+  Installed and restarted with a backup of the previous executable.
+  Plan: [popup frame](../ai/roadmaps/complete/2026-09-15-phase-5-popup-frame.md).
+
 ## 2026-08-21 — v0.1.1
 
 - Diagnosability: panics are now logged. Release builds are

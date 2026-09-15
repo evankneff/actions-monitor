@@ -10,17 +10,20 @@ use std::ffi::c_void;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Dwm::{
-    DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
-    DWM_WINDOW_CORNER_PREFERENCE, DwmSetWindowAttribute,
+    DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromPoint,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GWL_EXSTYLE, GetWindowLongPtrW, HWND_TOPMOST, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-    SWP_NOOWNERZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_EX_APPWINDOW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, HWND_TOPMOST, IsWindowVisible, SW_HIDE,
+    SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION, WS_EX_APPWINDOW,
+    WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+    WS_THICKFRAME,
 };
 
 /// Where and how big the popup should be, in physical pixels.
@@ -75,7 +78,8 @@ pub fn hwnd_of(handle: &impl HasWindowHandle) -> Option<HWND> {
     }
 }
 
-/// Apply the extended styles that make this a well-behaved popup:
+/// Apply native popup styles, including the extended styles that prevent focus
+/// stealing and taskbar presence:
 ///
 /// * `WS_EX_NOACTIVATE` - the window never becomes the foreground window, so
 ///   showing it (or clicking a card) never steals focus from what you are doing.
@@ -86,21 +90,53 @@ pub fn hwnd_of(handle: &impl HasWindowHandle) -> Option<HWND> {
 /// This has to be re-asserted rather than set once: winit rebuilds the whole
 /// extended style from its own flag set whenever something like visibility or
 /// window level changes, which silently drops anything we added behind its back.
-/// The call is two cheap syscalls and a comparison, so it runs every tick.
+/// winit implements "undecorated" by covering the non-client area, while keeping
+/// caption and edge styles. DWM can still composite a rectangle behind our GL
+/// surface. Remove those styles and use a real WS_POPUP instead.
 ///
 /// Returns `true` if the styles actually had to be corrected.
 pub fn configure(hwnd: HWND) -> bool {
     unsafe {
+        let current_style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        let wanted_style = (current_style | WS_POPUP.0 as isize)
+            & !((WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0
+                as isize);
         let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let wanted = (current
             | WS_EX_NOACTIVATE.0 as isize
             | WS_EX_TOOLWINDOW.0 as isize
             | WS_EX_TOPMOST.0 as isize)
-            & !(WS_EX_APPWINDOW.0 as isize);
-        if wanted == current {
+            & !((WS_EX_APPWINDOW
+                | WS_EX_WINDOWEDGE
+                | WS_EX_CLIENTEDGE
+                | WS_EX_DLGMODALFRAME
+                | WS_EX_STATICEDGE)
+                .0 as isize);
+        if wanted == current && wanted_style == current_style {
             return false;
         }
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted);
+        if wanted_style != current_style {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, wanted_style);
+        }
+        if wanted != current {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted);
+        }
+        if let Err(err) = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED
+                | SWP_NOACTIVATE
+                | SWP_NOMOVE
+                | SWP_NOSIZE
+                | SWP_NOZORDER
+                | SWP_NOOWNERZORDER,
+        ) {
+            tracing::debug!("could not refresh popup frame: {err}");
+        }
         true
     }
 }
@@ -109,10 +145,9 @@ pub fn configure(hwnd: HWND) -> bool {
 ///
 /// Windows 11 rounds the corners of, and draws a 1px border around, even a
 /// borderless `WS_POPUP` window - which on this transparent overlay reads as a
-/// pale box floating around the card stack. Both are DWM attributes rather than
-/// window styles, so winit cannot clobber them and this only needs saying once.
-///
-/// Both calls fail harmlessly on Windows 10, where neither attribute exists.
+/// pale box floating around the card stack. These attributes complement the
+/// native popup styles; the card renderer supplies its own shadows.
+/// Both calls fail harmlessly on Windows 10.
 pub fn strip_dwm_frame(hwnd: HWND) {
     unsafe {
         let corners: DWM_WINDOW_CORNER_PREFERENCE = DWMWCP_DONOTROUND;
@@ -168,6 +203,10 @@ pub fn hide(hwnd: HWND) {
     unsafe {
         let _ = ShowWindow(hwnd, SW_HIDE);
     }
+}
+
+pub fn is_visible(hwnd: HWND) -> bool {
+    unsafe { IsWindowVisible(hwnd).as_bool() }
 }
 
 /// The primary monitor's work area, in physical pixels.

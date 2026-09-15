@@ -184,8 +184,11 @@ impl MonitorApp {
         let path = reloader.path().to_path_buf();
         if let Err(err) = open::that_detached(&path) {
             tracing::warn!("could not open the config: {err}");
-            self.state
-                .push_notice("Could not open the config", first_line(&err.to_string()), true);
+            self.state.push_notice(
+                "Could not open the config",
+                first_line(&err.to_string()),
+                true,
+            );
         }
     }
 
@@ -265,6 +268,11 @@ impl MonitorApp {
     /// taskbar or a DPI change is picked up without a restart.
     fn reposition(&mut self, ctx: &Context) {
         let Some(hwnd) = self.hwnd else { return };
+        // Keep the last useful size while hidden; a 1px surface can leave a
+        // horizontal remnant when Windows composites the resize before hiding.
+        if self.state.is_empty() {
+            return;
+        }
 
         // The window's own DPI is authoritative; egui's points-per-pixel is a
         // good fallback if Windows will not answer.
@@ -296,25 +304,31 @@ impl MonitorApp {
             return;
         }
         tracing::debug!("re-applied popup window styles after winit reset them");
-        if self.visible {
+        if win::is_visible(hwnd) {
             win::hide(hwnd);
-            win::show(hwnd);
+            if !self.state.is_empty() {
+                win::show(hwnd);
+            }
         }
     }
 
     fn update_visibility(&mut self) {
         let Some(hwnd) = self.hwnd else { return };
         let wanted = !self.state.is_empty();
+        // eframe shows the HWND after its first painted frame, and winit can
+        // rebuild visibility flags. Our previous tick is not authoritative.
+        let visible = win::is_visible(hwnd);
 
-        if wanted && !self.visible {
+        if wanted && !visible {
             win::show(hwnd);
-            self.visible = true;
             tracing::debug!(cards = self.state.cards().len(), "popup shown");
-        } else if !wanted && self.visible {
+        } else if !wanted && visible {
             win::hide(hwnd);
-            self.visible = false;
-            self.hover = HoverMap::default();
             tracing::debug!("popup hidden");
+        }
+        self.visible = win::is_visible(hwnd);
+        if !wanted {
+            self.hover = HoverMap::default();
         }
     }
 
@@ -398,6 +412,12 @@ impl eframe::App for MonitorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.state.is_empty() {
+            // A startup/queued paint can still run while we want to be hidden.
+            // Reconcile promptly after eframe's first-frame automatic show.
+            ui.ctx().request_repaint();
+            return;
+        }
         let now = Instant::now();
         let now_utc = Utc::now();
         let mut actions: Vec<Action> = Vec::new();
@@ -422,8 +442,7 @@ impl eframe::App for MonitorApp {
                         .get("__panel")
                         .copied()
                         .unwrap_or_default();
-                    let (hit, hovered) =
-                        card::watched_panel(ui, self.state.watched(), now, was);
+                    let (hit, hovered) = card::watched_panel(ui, self.state.watched(), now, was);
                     next_hover.notices.insert("__panel".to_owned(), hovered);
                     if hit == card::Hit::Dismiss {
                         actions.push(Action::ClosePanel);
@@ -504,7 +523,11 @@ pub fn viewport() -> egui::ViewportBuilder {
         .with_title("actions-monitor")
         .with_app_id("actions-monitor")
         .with_inner_size([theme::WINDOW_WIDTH, theme::RUN_CARD_HEIGHT])
-        .with_decorations(false)
+        // egui-winit 0.36 enables a Windows shadow (and a 1px non-client top
+        // edge) for decorations=false. has_shadow only affects macOS. Start
+        // hidden with decorations enabled, then win::configure removes the
+        // native frame before showing without enabling winit's shadow hack.
+        .with_decorations(true)
         .with_transparent(true)
         .with_resizable(false)
         .with_always_on_top()

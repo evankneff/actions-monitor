@@ -1,6 +1,6 @@
 # actions-monitor — Project Context
 
-Last updated: 2026-08-21
+Last updated: 2026-09-15
 
 ## What This Project Is
 
@@ -40,6 +40,8 @@ Built and verified:
 - Conditional requests (ETag / `If-None-Match`) so idle polling is nearly free
 - Frameless, transparent, always-on-top popup anchored bottom-left, growing
   upward, that never steals focus and has no taskbar entry
+- Popup framing bypasses egui-winit's automatic Windows undecorated shadow;
+  idle visibility is checked against the HWND and hidden windows retain size
 - Estimated progress bars from locally-learned duration history
 - Tray icon whose colour is live status; left-click shows watched repos,
   right-click opens the menu
